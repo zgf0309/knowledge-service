@@ -1,0 +1,6 @@
+# 知识库服务依赖
+# 注意：在 Docker 中直接使用 common/requirements.txt
+# 本地开发时需要先安装 common 依赖
+
+# 额外依赖
+orjson>=3.9.0

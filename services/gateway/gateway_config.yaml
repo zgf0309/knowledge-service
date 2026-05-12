@@ -1,0 +1,140 @@
+# 精简版 API Gateway 配置
+# 只保留 knowledge-web 当前调用链需要的服务和路由。
+
+gateway:
+  host: 0.0.0.0
+  port: 8010
+  debug: false
+
+services:
+  - name: knowledge-service
+    host: localhost
+    port: 7101
+    prefix: /ai/knowledge
+    health_check: /health
+    timeout: 30
+    max_retries: 3
+
+  - name: file_service
+    host: localhost
+    port: 7103
+    prefix: /ai/files
+    health_check: /health
+    timeout: 30
+    max_retries: 3
+
+  - name: model_service
+    host: localhost
+    port: 7104
+    prefix: /ai/model
+    health_check: /health
+    timeout: 30
+    max_retries: 3
+
+  - name: chat_service
+    host: localhost
+    port: 7105
+    prefix: /chat
+    health_check: /health
+    timeout: 60
+    max_retries: 3
+
+  - name: parser_service
+    host: localhost
+    port: 7106
+    prefix: /ai/knowledge/doc/chunk
+    health_check: /health
+    timeout: 60
+    max_retries: 3
+
+routes:
+  # 文档切片接口：必须放在 /ai/knowledge* 前面，避免被 knowledge-service 抢先匹配。
+  - path: /ai/knowledge/doc/chunk*
+    methods: ["GET", "POST", "PUT", "DELETE"]
+    service: parser_service
+    rate_limit: 50
+    auth_required: true
+
+  # Markdown 原文、文件上传下载
+  - path: /ai/knowledge/mdcontent
+    methods: ["GET"]
+    service: file_service
+    rate_limit: 50
+    auth_required: true
+
+  - path: /ai/files/*
+    methods: ["GET", "POST", "DELETE"]
+    service: file_service
+    rate_limit: 50
+    auth_required: true
+
+  # Embedding 模型列表
+  - path: /ai/embedding/*
+    methods: ["GET"]
+    service: model_service
+    rate_limit: 50
+    auth_required: false
+
+  # 对话接口：/api/v1/chat/* 前缀进入网关后，handler 看到的是 /chat/*。
+  - path: /chat/*
+    methods: ["GET", "POST", "DELETE"]
+    service: chat_service
+    rate_limit: 30
+    auth_required: true
+
+  # 知识库、知识树、文档导入/运行/停止等通用接口。
+  - path: /ai/knowledge*
+    methods: ["GET", "POST", "PUT", "DELETE"]
+    service: knowledge-service
+    rate_limit: 100
+    auth_required: true
+
+auth:
+  jwt_secret: "jusure-microservices-secret-key-2026"
+  jwt_algorithm: HS256
+  token_expire_hours: 24
+  exclude_paths:
+    - /health
+    - /gateway/status
+    - /metrics
+    - /api/v1/auth/login
+    - /api/v1/auth/register
+    - /api/v1/auth/refresh
+    - /api/v1/auth/verify
+    - /api/v1/auth/sso/login
+    - /api/v1/auth/sso/callback
+    - /api/v1/auth/sso/callback/redirect
+    - /api/v1/auth/sso/config
+    - /api/v1/auth/sso/logout
+    - /api/ai/auth/login
+    - /api/ai/auth/register
+    - /api/ai/auth/refresh
+    - /api/ai/auth/verify
+    - /api/ai/auth/sso/login
+    - /api/ai/auth/sso/callback
+    - /api/ai/auth/sso/callback/redirect
+    - /api/ai/auth/sso/config
+    - /api/ai/auth/sso/logout
+    # 开发阶段暂时放开前端主链路；生产环境请接入真实鉴权后删除这些豁免。
+    - /api/v1/ai/knowledge
+    - /api/v1/ai/files/upload
+    - /api/v1/ai/embedding/models
+    - /api/v1/chat
+    - /ai/knowledge
+    - /ai/knowledge/group
+    - /ai/files/upload
+    - /ai/embedding/models
+    - /chat
+
+rate_limit:
+  enabled: true
+  redis_host: localhost
+  redis_port: 6379
+  default_limit: 100
+  burst: 200
+
+circuit_breaker:
+  enabled: true
+  failure_threshold: 5
+  recovery_timeout: 30
+  timeout_seconds: 30

@@ -1,0 +1,235 @@
+# ============================================================
+# Galaxy RAG 全局配置文件
+# ============================================================
+# 使用说明:
+# 1. 复制此文件为 config.yaml
+# 2. 根据实际需求修改配置值
+# 3. 所有微服务将共享此配置文件
+# 4. 可通过 config-service Web 界面或编辑器修改
+# ============================================================
+
+# ==================== 基础服务配置 ====================
+service:
+  # 运行环境：local, development, staging, production
+  environment: production
+  
+  # 服务基础配置（所有微服务通用）
+  host: "0.0.0.0"
+  workers: 4
+  debug: false
+  
+  # 各微服务端口配置
+  ports:
+    knowledge-service: 7101
+    rag-service: 7102
+    agent-service: 7103
+    parser-service: 7110
+    media-service: 7104
+    file-service: 7105
+    chat-service: 7105
+    model-service: 7104
+    process-service: 7108
+    system-service: 7109
+    tabulation-service: 7111
+    task-executor: 7112
+    config-service: 7200
+
+# ==================== 数据库配置 ====================
+database:
+  # MySQL 配置
+  mysql:
+    host: "localhost"
+    port: 3306
+    user: "root"
+    password: "root123"
+    database: "galaxy_rag"
+    max_connections: 100
+    pool_size: 10
+    
+  # MongoDB 配置
+  mongodb:
+    host: "localhost"
+    port: 27017
+    user: "galaxy_rag"
+    password: "galaxy_rag123"
+    database: "galaxy_rag"
+    
+  # Redis 配置
+  redis:
+    host: "localhost"
+    port: 6379
+    password: "galaxy_rag123"
+    db: 0
+    
+  # Elasticsearch 配置
+  elasticsearch:
+    host: "localhost"
+    port: 9200
+    user: ""
+    password: "elastic123"
+    scheme: "http"
+
+# ==================== 对象存储配置 ====================
+minio:
+  host: "localhost"
+  port: 9000
+  access_key: "minioadmin"
+  secret_key: "minioadmin"
+  secure: false
+  bucket: "galaxy_rag"
+
+# ==================== 向量库配置 ====================
+vector_store:
+  store_type: "elasticsearch"  # elasticsearch, milvus, chromadb
+  index_prefix: "galaxy_rag"
+  embedding_dims: 1024
+
+# ==================== LLM 配置 ====================
+llm:
+  default_llm_factory: "openai"
+  default_llm_model: "gpt-4"
+  default_embedding_model: "bge-m3"
+  api_key: "sk-your-openai-api-key-here"
+  base_url: "https://api.openai.com/v1"
+  
+  # 可选：其他 LLM 提供商配置
+  # providers:
+  #   dashscope:
+  #     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  #     api_key: "sk-your-dashscope-api-key"
+  #     models:
+  #       llm: "qwen-plus"
+  #       embedding: "text-embedding-v2"
+  #   ollama:
+  #     base_url: "http://localhost:11434/v1"
+  #     api_key: "ollama"
+  #     models:
+  #       llm: "qwen2.5:7b"
+  #       embedding: "nomic-embed-text"
+
+# ==================== 文档解析器配置 ====================
+parser:
+  # Ragflow 模式开关
+  ragflow_mode: false
+  ragflow_pdf_plain: false
+  
+  # 分块配置
+  chunk_token_num: 512
+  overlap_percent: 0
+  delimiter: "\n!?。;！？"
+  
+  # PDF 专项配置
+  pdf_header_footer_margin: 50
+  pdf_image_area_thr: 10
+  
+  # HTML 专项配置
+  html_chunk_token_num: 512
+  
+  # Excel 专项配置
+  excel_chunk_rows: 256
+  
+  # 并发解析配置
+  parse_workers: 4
+  archive_max_file_mb: 50
+  
+  # 智能分句配置
+  use_sat: true
+  sat_model: "sat-3l-sm"
+  
+  # 语义分块配置
+  semantic_chunking: false
+  semantic_threshold: 0.5
+  semantic_breakpoint_type: "percentile"  # percentile / std_deviation / gradient
+
+# ==================== 任务执行器配置 ====================
+task_executor:
+  max_concurrent_tasks: 5
+  max_concurrent_chunks: 10
+  embedding_batch_size: 32
+  task_timeout: 3600  # 秒
+  retry_count: 3
+  queue_name_prefix: "galaxy_rag"
+  consumer_group: "galaxy_rag_workers"
+
+# ==================== 微服务间调用配置 ====================
+services:
+  knowledge_service_url: "http://knowledge-service:7101"
+  rag_service_url: "http://rag-service:7102"
+  agent_service_url: "http://agent-service:7103"
+  parser_service_url: "http://parser-service:7110"
+  media_service_url: "http://media-service:7104"
+  file_service_url: "http://file-service:7105"
+  chat_service_url: "http://chat-service:7105"
+  model_service_url: "http://model-service:7104"
+  process_service_url: "http://process-service:7108"
+  system_service_url: "http://system-service:7109"
+  tabulation_service_url: "http://tabulation-service:7111"
+  task_executor_url: "http://task-executor:7112"
+  config_service_url: "http://config-service:7200"
+
+# ==================== 文档清洗配置 ====================
+document_cleaning:
+  # 是否默认启用文档清洗
+  enable_cleaning: true
+  
+  # 默认清洗规则（可多个）
+  default_rules:
+    - rule_type: 0  # 脚本处理
+      rule_content: "\\s+"
+      replacement: " "
+      description: "多余空白字符合并为单个空格"
+      priority: 1
+    - rule_type: 0
+      rule_content: "[\\u200B-\\u200F\\uFEFF]"
+      replacement: ""
+      description: "清理零宽字符"
+      priority: 2
+    - rule_type: 0
+      rule_content: "\\x00"
+      replacement: ""
+      description: "清理空字节"
+      priority: 3
+
+# ==================== 知识库预配置 ====================
+knowledge_base:
+  # 默认分块策略
+  default_chunk_strategy: "simple"  # simple, semantic, ragflow
+  
+  # 默认切片参数
+  default_chunk_size: 256
+  default_chunk_overlap: 20
+  
+  # 默认文档清洗配置
+  default_enable_cleaning: true
+  default_clean_rules: []  # 留空则使用系统内置规则
+
+# ==================== API 运行时参数 ====================
+# 这些参数可在 API 调用时动态传入，覆盖默认配置
+api_runtime:
+  # 文档处理接口允许的参数范围
+  chunk_size_range: [128, 2048]
+  chunk_overlap_range: [0, 512]
+  max_file_size_mb: 100
+  allowed_file_types: ["pdf", "docx", "xlsx", "pptx", "txt", "md", "html"]
+
+# ==================== 日志配置 ====================
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/galaxy_rag.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+
+# ==================== 性能优化配置 ====================
+performance:
+  # 连接池配置
+  db_pool_recycle: 3600
+  db_pool_pre_ping: true
+  
+  # 缓存配置
+  cache_ttl: 3600  # 秒
+  cache_max_size: 10000
+  
+  # 超时配置
+  http_timeout: 30
+  grpc_timeout: 10

@@ -1,0 +1,84 @@
+# ============================================================
+# jusure_microservices Git 忽略文件配置
+# ============================================================
+
+# 环境配置（敏感信息）
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# 虚拟环境
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 日志文件
+logs/
+*.log
+
+# 数据目录（开发环境）
+data/
+backup/
+
+# 临时文件
+temp/
+tmp/
+.cache/
+
+# 测试覆盖报告
+htmlcov/
+.coverage
+.coverage.*
+.pytest_cache/
+
+# 文档构建
+docs/_build/
+site/
+
+# Docker
+docker-compose.override.yml
+.docker/
+
+# 证书和密钥
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+
+# 其他
+*.bak
+*.tmp
+Thumbs.db
