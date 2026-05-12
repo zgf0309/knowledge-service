@@ -1,4 +1,4 @@
-# jusure_microservices 本地精简版
+# knowledge-web 本地精简版
 
 本目录已按 `knowledge-web` 当前前端调用精简，只保留知识库前端需要的最小后端。
 
@@ -128,7 +128,7 @@ curl http://localhost:8010/health
 `knowledge-web/config/proxy.ts` 里本地开发建议指向：
 
 ```ts
-target: 'http://localhost:8010'
+target: "http://localhost:8010";
 ```
 
 当前前端请求路径形如：
