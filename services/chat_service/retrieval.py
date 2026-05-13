@@ -130,6 +130,7 @@ def build_context_prompt(chunks: list[RetrievedChunk]) -> str:
         return (
             "当前会话已关联知识库，但没有检索到可用片段。"
             "如果用户问题需要知识库内容，请说明未检索到相关资料，并基于通用知识谨慎回答。"
+            "中文思考、问题、回答用户所有问题。"
         )
 
     blocks = []
@@ -144,6 +145,7 @@ def build_context_prompt(chunks: list[RetrievedChunk]) -> str:
     return (
         "你是知识库问答助手。请优先根据以下知识库检索结果回答；"
         "如果资料不足，明确说明不足，不要编造。\n\n"
+        "中文思考、问题、回答用户所有问题。 \n\n"
         + "\n\n".join(blocks)
     )
 

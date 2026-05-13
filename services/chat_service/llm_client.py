@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 """聊天服务默认大模型客户端。"""
 import os
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Iterable
+
+from openai.types.chat import ChatCompletionMessageParam
 
 DEFAULT_LLM_BASE_URL = os.getenv('DEFAULT_LLM_BASE_URL', os.getenv('LLM_BASE_URL', 'http://114.242.210.44:8000/v1'))
 DEFAULT_LLM_MODEL_NAME = os.getenv('DEFAULT_LLM_MODEL_NAME', os.getenv('DEFAULT_LLM_MODEL', 'jusure-llm'))
 DEFAULT_LLM_API_KEY = os.getenv('LLM_API_KEY', '')
 
-async def stream_chat(messages: list[dict[str, str]]) -> AsyncGenerator[tuple[str, str], None]:
+async def stream_chat(messages: Iterable[ChatCompletionMessageParam]) -> AsyncGenerator[tuple[str, str], None]:
     """调用 OpenAI 兼容聊天接口，并逐 token 向上游返回。"""
     from openai import AsyncOpenAI
 

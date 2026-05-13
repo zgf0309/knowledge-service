@@ -16,6 +16,12 @@ from fastapi import HTTPException
 from fastapi import Depends
 from fastapi import Body
 from fastapi.responses import StreamingResponse
+from openai.types.chat import (
+    ChatCompletionAssistantMessageParam,
+    ChatCompletionMessageParam,
+    ChatCompletionSystemMessageParam,
+    ChatCompletionUserMessageParam,
+)
 
 from common.auth_context import RequestContext, get_request_context, pick_tenant, pick_user
 from common.utils import get_logger
@@ -23,6 +29,7 @@ from common.utils.response import api_success
 from .core_services import SessionService
 from .llm_client import stream_chat
 from .retrieval import build_context_prompt, reference_docs, retrieve_knowledge
+import uuid
 
 logger = get_logger("chat_api")
 
@@ -31,6 +38,14 @@ router = APIRouter(prefix="/ai", tags=["Chat Service"])
 chat_router = APIRouter(prefix="/chat", tags=["Chat Service"])
 
 _session_svc = SessionService()
+
+def build_chat_message(role: Any, content: str) -> ChatCompletionMessageParam:
+    """Build an OpenAI-compatible message from persisted chat history."""
+    if role == "assistant":
+        return ChatCompletionAssistantMessageParam(role="assistant", content=content)
+    if role == "system":
+        return ChatCompletionSystemMessageParam(role="system", content=content)
+    return ChatCompletionUserMessageParam(role="user", content=content)
 
 def sse_event(data: dict[str, Any]) -> bytes:
     """构造标准 SSE message 帧。
@@ -41,7 +56,7 @@ def sse_event(data: dict[str, Any]) -> bytes:
     """
     compat = {
         key: data[key]
-        for key in ("type", "content", "delta", "answer", "references", "count", "kb_id")
+        for key in ("type", "content", "delta", "answer", "references", "count", "kb_id", "event", "session_id", "message_id", "id")
         if key in data
     }
     payload = {
@@ -59,7 +74,10 @@ def _build_retrieval_fallback_answer(
         )
 
     lines = [
-        "已从知识库检索到相关内容，但聊天模型服务暂时不可用，无法生成完整总结。", f"模型服务返回错误：{error}。", "", f"关于“{question}”，可先参考以下片段：", ]
+        "已从知识库检索到相关内容，但聊天模型服务暂时不可用，无法生成完整总结。", 
+        f"模型服务返回错误：{error}。", "", 
+        f"关于“{question}”，可先参考以下片段：", 
+    ]
     for index, item in enumerate(reference_chunks[:5], 1):
         content = str(item.get("content") or "").strip()
         if len(content) > 300:
@@ -135,9 +153,11 @@ async def send_conversation_message(
         answer_parts = []
         reference_chunks = []
         reference_doc_list = []
+        session_id = conversation_id
+        message_id = str(uuid.uuid4())
         try:
             yield b": stream-start\n\n"
-            yield sse_event({"type": "status", "status": "retrieving"})
+            yield sse_event({"type": "status", "status": "retrieving", "event": "RUN_STARTED", "session_id": session_id, "message_id": message_id, "id": str(uuid.uuid4())})
             retrieved_chunks = await retrieve_knowledge(session_tenant_id, kb_id, content, top_k=5)
             reference_chunks = [chunk.to_reference() for chunk in retrieved_chunks]
             reference_doc_list = reference_docs(retrieved_chunks)
@@ -146,25 +166,39 @@ async def send_conversation_message(
                     "type": "retrieval", "kb_id": kb_id, "count": len(reference_chunks), "references": reference_chunks, }
             )
 
-            messages = [
-                {"role": "system", "content": build_context_prompt(retrieved_chunks)}, *[
-                    {"role": item.get("role", "user"), "content": str(item.get("content", ""))}
+            messages: list[ChatCompletionMessageParam] = [
+                ChatCompletionSystemMessageParam(role="system", content=build_context_prompt(retrieved_chunks)), *[
+                    build_chat_message(item.get("role"), str(item.get("content", "")))
                     for item in history
                     if item.get("content")
-                ], {"role": "user", "content": content}, ]
+                ], ChatCompletionUserMessageParam(role="user", content=content), ]
 
-            yield sse_event({"type": "status", "status": "thinking"})
+            thinking_start_flag = False
+            thinking_end_flag = False
+            text_start_flag = False
+            text_start_flag = False
             last_heartbeat = time.monotonic()
             try:
                 async for chunk_type, token in stream_chat(messages):
                     if chunk_type == "content":
+                        if not thinking_end_flag:
+                            thinking_end_flag = True
+                            yield sse_event({"type": "status", "status": "done", "event": "THINKING_END", "session_id": session_id, "message_id": message_id, "id": str(uuid.uuid4())})
                         answer_parts.append(token)
-                        yield sse_event({"type": "chunk", "content": token, "delta": token})
+                        if not text_start_flag:
+                            text_start_flag = True
+                            yield sse_event({"type": "status", "status": "text", "event": "TEXT_START", "session_id": session_id, "message_id": message_id, "id": str(uuid.uuid4())})
+                        yield sse_event({"type": "chunk", "content": token, "event": "TEXT_CONTENT", "session_id": session_id, "message_id": message_id, "id": str(uuid.uuid4())})
                     else:
-                        yield sse_event({"type": "reasoning", "reasoning_content": token})
+                        if not thinking_start_flag:
+                            thinking_start_flag = True
+                            yield sse_event({"type": "status", "status": "thinking", "event": "THINKING_START", "session_id": session_id, "message_id": message_id, "id": str(uuid.uuid4())})
+                        yield sse_event({"type": "reasoning", "reasoning_content": token, "event": "THINKING_CONTENT", "session_id": session_id, "message_id": message_id, "id": str(uuid.uuid4())})
                     if time.monotonic() - last_heartbeat > 10:
                         yield b": keep-alive\n\n"
                         last_heartbeat = time.monotonic()
+                yield sse_event(
+                    {"type": "status", "status": "done", "event": "TEXT_END", "session_id": session_id, "message_id": message_id, "id": str(uuid.uuid4())})
             except Exception as model_error:
                 logger.exception("chat model stream failed")
                 fallback_answer = _build_retrieval_fallback_answer(
@@ -172,7 +206,7 @@ async def send_conversation_message(
                 answer_parts.append(fallback_answer)
                 yield sse_event(
                     {
-                        "type": "chunk", "content": fallback_answer, "delta": fallback_answer, }
+                        "type": "done", "content": fallback_answer, "event": "RUN_EEROR", "session_id": session_id, "message_id": message_id, "id": str(uuid.uuid4())}
                 )
 
             answer = "".join(answer_parts)
@@ -181,7 +215,7 @@ async def send_conversation_message(
             await _session_svc.update_messages(
                 tenant_id=session_tenant_id, session_id=conversation_id, messages=new_history, answer=answer, status="completed", reference_chunks=reference_chunks, reference_docs=reference_doc_list, )
             yield sse_event(
-                {"type": "done", "references": reference_chunks}, )
+                {"type": "done", "event": "RUN_FINISHED", "session_id": session_id, "message_id": message_id, "id": str(uuid.uuid4()), "references": reference_chunks}, )
         except Exception as e:
             logger.exception("send_conversation_message error")
             yield sse_event({"type": "error", "message": str(e)})
