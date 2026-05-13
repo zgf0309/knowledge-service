@@ -16,7 +16,7 @@ async def stream_chat(messages: Iterable[ChatCompletionMessageParam]) -> AsyncGe
     client = AsyncOpenAI(
         api_key=DEFAULT_LLM_API_KEY, base_url=DEFAULT_LLM_BASE_URL, timeout=120, )
     stream = await client.chat.completions.create(
-        model=DEFAULT_LLM_MODEL_NAME, messages=messages, temperature=0.1, max_tokens=2048, stream=True, )
+        model=DEFAULT_LLM_MODEL_NAME, messages=messages, temperature=0.1, stream=True, )
 
     async for chunk in stream:
         if not chunk.choices:

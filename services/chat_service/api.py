@@ -56,12 +56,15 @@ def sse_event(data: dict[str, Any]) -> bytes:
     """
     compat = {
         key: data[key]
-        for key in ("type", "content", "delta", "answer", "references", "count", "kb_id", "event", "session_id", "message_id", "id")
+        for key in ("type", "content", "count", "kb_id", "event", "session_id", "message_id", "id")
         if key in data
     }
     payload = {
-        "code": 200, "message": "success", "data": data, # 兼容当前前端 extractStreamContent/extractAssistantReply 的顶层读取逻辑。
-        **compat, }
+        "code": 200, 
+        "message": "success", 
+        "data": data, # 兼容当前前端 extractStreamContent/extractAssistantReply 的顶层读取逻辑。
+        # **compat, 
+    }
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8")
 
 def _build_retrieval_fallback_answer(
@@ -175,15 +178,21 @@ async def send_conversation_message(
 
             thinking_start_flag = False
             thinking_end_flag = False
-            text_start_flag = False
+            thinking_start_time: float | None = None
             text_start_flag = False
             last_heartbeat = time.monotonic()
+
+            def thinking_elapsed() -> float:
+                if thinking_start_time is None:
+                    return 0
+                return round(time.monotonic() - thinking_start_time, 1)
+
             try:
                 async for chunk_type, token in stream_chat(messages):
                     if chunk_type == "content":
                         if not thinking_end_flag:
                             thinking_end_flag = True
-                            yield sse_event({"type": "status", "status": "done", "event": "THINKING_END", "session_id": session_id, "message_id": message_id, "id": str(uuid.uuid4())})
+                            yield sse_event({"type": "status", "status": "done", "event": "THINKING_END", "time": thinking_elapsed(), "session_id": session_id, "message_id": message_id, "id": str(uuid.uuid4())})
                         answer_parts.append(token)
                         if not text_start_flag:
                             text_start_flag = True
@@ -192,8 +201,9 @@ async def send_conversation_message(
                     else:
                         if not thinking_start_flag:
                             thinking_start_flag = True
-                            yield sse_event({"type": "status", "status": "thinking", "event": "THINKING_START", "session_id": session_id, "message_id": message_id, "id": str(uuid.uuid4())})
-                        yield sse_event({"type": "reasoning", "reasoning_content": token, "event": "THINKING_CONTENT", "session_id": session_id, "message_id": message_id, "id": str(uuid.uuid4())})
+                            thinking_start_time = time.monotonic()
+                            yield sse_event({"type": "status", "status": "thinking", "event": "THINKING_START", "time": 0, "session_id": session_id, "message_id": message_id, "id": str(uuid.uuid4())})
+                        yield sse_event({"type": "reasoning", "reasoning_content": token, "event": "THINKING_CONTENT", "time": thinking_elapsed(), "session_id": session_id, "message_id": message_id, "id": str(uuid.uuid4())})
                     if time.monotonic() - last_heartbeat > 10:
                         yield b": keep-alive\n\n"
                         last_heartbeat = time.monotonic()
