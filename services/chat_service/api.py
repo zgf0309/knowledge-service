@@ -156,6 +156,9 @@ async def send_conversation_message(
         answer_parts = []
         reference_chunks = []
         reference_doc_list = []
+        thinking_parts = []
+        thinking_status: str = "thinking"
+        thinking_time: float = 0
         session_id = conversation_id
         message_id = str(uuid.uuid4())
         try:
@@ -192,6 +195,8 @@ async def send_conversation_message(
                     if chunk_type == "content":
                         if not thinking_end_flag:
                             thinking_end_flag = True
+                            thinking_status = "done"
+                            thinking_time = thinking_elapsed()
                             yield sse_event({"type": "status", "status": "done", "event": "THINKING_END", "time": thinking_elapsed(), "session_id": session_id, "message_id": message_id, "id": str(uuid.uuid4())})
                         answer_parts.append(token)
                         if not text_start_flag:
@@ -203,6 +208,8 @@ async def send_conversation_message(
                             thinking_start_flag = True
                             thinking_start_time = time.monotonic()
                             yield sse_event({"type": "status", "status": "thinking", "event": "THINKING_START", "time": 0, "session_id": session_id, "message_id": message_id, "id": str(uuid.uuid4())})
+                        thinking_parts.append(token)
+                        thinking_time = thinking_elapsed()
                         yield sse_event({"type": "reasoning", "reasoning_content": token, "event": "THINKING_CONTENT", "time": thinking_elapsed(), "session_id": session_id, "message_id": message_id, "id": str(uuid.uuid4())})
                     if time.monotonic() - last_heartbeat > 10:
                         yield b": keep-alive\n\n"
@@ -220,8 +227,17 @@ async def send_conversation_message(
                 )
 
             answer = "".join(answer_parts)
+            thinking_content = "".join(thinking_parts)
+            assistant_message: dict[str, Any] = {
+                "role": "assistant",
+                "content": answer,
+            }
+            if thinking_content:
+                assistant_message["thinking"] = thinking_content
+                assistant_message["thinkingTime"] = thinking_time
+                assistant_message["thinkingStatus"] = thinking_status
             new_history = [
-                *history, {"role": "user", "content": content}, {"role": "assistant", "content": answer}, ]
+                *history, {"role": "user", "content": content}, assistant_message, ]
             await _session_svc.update_messages(
                 tenant_id=session_tenant_id, session_id=conversation_id, messages=new_history, answer=answer, status="completed", reference_chunks=reference_chunks, reference_docs=reference_doc_list, )
             yield sse_event(
